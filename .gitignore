@@ -1,0 +1,11 @@
+node_modules/
+dist/
+scripts/out/
+*.local
+.DS_Store
+*.tsbuildinfo
+
+# 本地服务的运行时文件
+.devserver.pid
+devserver.out.log
+devserver.err.log
