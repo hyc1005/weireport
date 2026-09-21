@@ -9,19 +9,19 @@ export interface ExportResult {
 }
 
 /** 工程 → docx（浏览器本地生成，不联网）。docx 库按需加载，不拖慢首屏 */
-export async function buildDocx(report: Report): Promise<ExportResult> {
+export async function buildDocx(report: Report, opts?: { autoFigureCaptions?: boolean }): Promise<ExportResult> {
   const [{ buildReportBlob }, { prepareReportForDocx }] = await Promise.all([
     import("./docx/build"),
     import("./docx/prepare"),
   ]);
   // 库里存的是 WebP 截图（体积小），Word 不认，先转成 png/jpeg
   const ready = await prepareReportForDocx(report);
-  const { blob, warnings } = await buildReportBlob(ready);
+  const { blob, warnings } = await buildReportBlob(ready, opts);
   return { blob, fileName: reportFileName(report), warnings };
 }
 
-export async function downloadReport(report: Report): Promise<ExportResult> {
-  const result = await buildDocx(report);
+export async function downloadReport(report: Report, opts?: { autoFigureCaptions?: boolean }): Promise<ExportResult> {
+  const result = await buildDocx(report, opts);
   downloadBlob(result.blob, result.fileName);
   return result;
 }

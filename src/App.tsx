@@ -62,10 +62,12 @@ import {
 } from "./storage";
 import { createReport, createReferenceReport, DEFAULT_OPTIONS, skeletonFrom } from "./template";
 import { downloadJson, downloadMarkdown, downloadReport } from "./export";
+import { reportFileName } from "./markdown";
 import { imageBlock, textBlock, type Block, type BlockKind, type Report } from "./types";
 import { parseDocx, type ImportParse, type ItemLevel } from "./docx/parse";
 import { buildReportFromItems, makeImagePreparer } from "./templateImport";
 import { ImportPreview } from "./components/ImportPreview";
+import ExportModal from "./components/ExportModal";
 import "./styles.css";
 import "./studio.css";
 
@@ -101,6 +103,9 @@ export default function App() {
   /** Word 导入：解析结果先停在预览里，确认之后才落库 */
   const [importDraft, setImportDraft] = useState<{ fileName: string; parsed: ImportParse } | null>(null);
   const [insertOpen, setInsertOpen] = useState(false);
+  /** 导出 Word 前的确认弹窗（每次都弹；勾选只影响这次导出） */
+  const [exportOpen, setExportOpen] = useState(false);
+  const [autoCaption, setAutoCaption] = useState(false);
 
   const pages = useMemo(() => (report ? flattenPages(report) : []), [report]);
   const safeIndex = Math.min(pageIndex, Math.max(0, pages.length - 1));
@@ -168,7 +173,7 @@ export default function App() {
         stepHistory(dir);
         return;
       }
-      if (settingsOpen || importDraft) return; // 弹窗开着时不抢键
+      if (settingsOpen || importDraft || exportOpen) return; // 弹窗开着时不抢键
       if (!selectedBlockId || !page || page.kind !== "content" || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl+C / Ctrl+P 这些是浏览器的，别抢
       const kind = ({ p: "image", c: "code", t: "text" } as Record<string, BlockKind>)[e.key.toLowerCase()];
@@ -187,7 +192,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedBlockId, page, settingsOpen, importDraft]);
+  }, [selectedBlockId, page, settingsOpen, exportOpen, importDraft]);
 
   /* ================= 保存引擎 ================= */
 
@@ -774,6 +779,11 @@ export default function App() {
 
   /* ================= 导出 ================= */
 
+  function openExportDialog() {
+    setAutoCaption(false);
+    setExportOpen(true);
+  }
+
   async function handleExport() {
     const current = reportRef.current;
     if (!current) return;
@@ -781,8 +791,9 @@ export default function App() {
     setError(null);
     try {
       await flush();
-      const result = await downloadReport(current);
+      const result = await downloadReport(current, { autoFigureCaptions: autoCaption });
       notify(`已生成 ${result.fileName}`);
+      setExportOpen(false);
       // 文件是生成了，但里面少了东西 —— 只弹 toast 会让人以为交出去的是完整的
       if (result.warnings.length) setError(result.warnings.join("；"));
     } catch (e) {
@@ -969,7 +980,7 @@ export default function App() {
         <button className="btn" onClick={() => setSettingsOpen(true)}>
           ⚙ 设置
         </button>
-        <button className="btn btn-primary" onClick={() => void handleExport()} disabled={busy === "export"}>
+        <button className="btn btn-primary" onClick={openExportDialog} disabled={busy === "export"}>
           {busy === "export" ? "生成中…" : "⬇ 导出 Word"}
         </button>
       </header>
@@ -1143,7 +1154,7 @@ export default function App() {
         busy={busy === "export"}
         onPrev={() => setPageIndex((i) => Math.max(0, i - 1))}
         onNext={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
-        onFinish={() => void handleExport()}
+        onFinish={openExportDialog}
         onHome={() => void goHome()}
       />
 
@@ -1175,6 +1186,29 @@ export default function App() {
               };
             });
           }}
+        />
+      )}
+
+      {exportOpen && (
+        <ExportModal
+          fileName={reportFileName(report)}
+          busy={busy === "export"}
+          autoCaption={autoCaption}
+          missingCaptions={report.sections.reduce(
+            (n, s) =>
+              n +
+              s.steps.reduce(
+                (m, st) =>
+                  m + st.blocks.filter((b) => b.kind === "image" && b.dataUrl.trim() && !b.caption.trim()).length,
+                0,
+              ),
+            0,
+          )}
+          onAutoCaption={setAutoCaption}
+          onCancel={() => {
+            if (busy !== "export") setExportOpen(false);
+          }}
+          onConfirm={() => void handleExport()}
         />
       )}
 

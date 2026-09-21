@@ -325,14 +325,26 @@ interface DroppedImage {
   caption: string;
 }
 
-function captionParagraph(block: Extract<Block, { kind: "image" }>, o: ReportOptions): Paragraph | null {
-  const text = block.caption.trim();
-  if (!text || block.captionPos !== "below") return null;
+function captionParagraph(block: Extract<Block, { kind: "image" }>, o: ReportOptions, textOverride?: string): Paragraph | null {
+  const text = (textOverride ?? block.caption).trim();
+  if (!text) return null;
+  // 手写图注尊重「图注位置」设置；自动补的固定放图下方
+  if (!textOverride && block.captionPos !== "below") return null;
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: spacing(o, 0, 200),
     children: [new TextRun({ text, size: 21, color: SUB_COLOR })],
   });
+}
+
+/** 全文有字节的图片按出现顺序编号（自动图注用；与纸面 / Markdown 同一套口径） */
+function figureNumbers(report: Report): Map<string, number> {
+  const m = new Map<string, number>();
+  let n = 0;
+  for (const s of report.sections)
+    for (const st of s.steps)
+      for (const b of st.blocks) if (b.kind === "image" && b.dataUrl.trim()) m.set(b.id, ++n);
+  return m;
 }
 
 function imageBlockChildren(
@@ -341,14 +353,18 @@ function imageBlockChildren(
   contentWidth: number,
   where: string,
   dropped: DroppedImage[],
+  figNo: Map<string, number> | null,
 ): Paragraph[] {
   const img = dataUrlToImage(block.dataUrl);
+  // 自动图注：只对「有图字节、没手写图注」的块补「图 N」，只影响这次导出
+  const n = figNo?.get(block.id);
+  const autoText = n && !block.caption.trim() ? `图 ${n}` : undefined;
   if (!img) {
     // 空的图片块整块丢掉（跟空代码块一样）；有数据却读不出来的必须吱一声
     if (!block.dataUrl.trim()) return [];
     dropped.push({ where, caption: block.caption.trim() });
     // 图没了至少把图注留下，否则交出去的文件里连「这里本该有一张图」都看不出来
-    const caption = captionParagraph(block, o);
+    const caption = captionParagraph(block, o, autoText);
     return caption ? [caption] : [];
   }
 
@@ -380,7 +396,7 @@ function imageBlockChildren(
     }),
   ];
 
-  const caption = captionParagraph(block, o);
+  const caption = captionParagraph(block, o, autoText);
   if (caption) out.push(caption);
   return out;
 }
@@ -432,6 +448,7 @@ function blockChildren(
   contentWidth: number,
   where: string,
   dropped: DroppedImage[],
+  figNo: Map<string, number> | null,
 ): Array<Paragraph | Table> {
   switch (block.kind) {
     case "text":
@@ -439,7 +456,7 @@ function blockChildren(
     case "code":
       return block.code.trim() ? [codeBlockChild(block, o, contentWidth)] : [];
     case "image":
-      return imageBlockChildren(block, o, contentWidth, where, dropped);
+      return imageBlockChildren(block, o, contentWidth, where, dropped, figNo);
     case "table": {
       const t = tableBlockChild(block, o, contentWidth);
       return t ? [t] : [];
@@ -447,7 +464,7 @@ function blockChildren(
   }
 }
 
-function contentChildren(report: Report, dropped: DroppedImage[]): Array<Paragraph | Table> {
+function contentChildren(report: Report, dropped: DroppedImage[], figNo: Map<string, number> | null): Array<Paragraph | Table> {
   const o = report.options;
   const reference = report.cover.style === "reference";
   const contentWidth = reference ? PAGE.width - 3600 : CONTENT_WIDTH_TWIP;
@@ -465,7 +482,7 @@ function contentChildren(report: Report, dropped: DroppedImage[]): Array<Paragra
 
     if (section.mode === "plain") {
       const where = section.title.trim() || "未命名小节";
-      for (const b of section.steps[0].blocks) kids.push(...blockChildren(b, o, contentWidth, where, dropped));
+      for (const b of section.steps[0].blocks) kids.push(...blockChildren(b, o, contentWidth, where, dropped, figNo));
       continue;
     }
 
@@ -473,7 +490,7 @@ function contentChildren(report: Report, dropped: DroppedImage[]): Array<Paragra
       // 与 UI 用同一个判定：不占号的步骤也不导出，编号序列才不会和目录对不上
       if (!countForNumbering(section, step)) continue;
       const where = `${section.title.trim() || "未命名小节"} / ${step.title.trim() || "未命名步骤"}`;
-      const body = step.blocks.flatMap((b) => blockChildren(b, o, contentWidth, where, dropped));
+      const body = step.blocks.flatMap((b) => blockChildren(b, o, contentWidth, where, dropped, figNo));
       const label = `${headings.step(`${section.id}:${step.id}`)?.text ?? ""}${step.title.trim()}`.trimEnd();
       kids.push(new Paragraph({ heading: HeadingLevel.HEADING_3, text: label }));
       kids.push(...body);
@@ -509,12 +526,18 @@ export interface BuiltDocx {
   warnings: string[];
 }
 
-export async function buildReportBlob(report: Report): Promise<BuiltDocx> {
+export interface BuildOptions {
+  /** 给没写图注的图自动补「图 N」（全文连续编号；只影响这次导出的字节，不动工程数据） */
+  autoFigureCaptions?: boolean;
+}
+
+export async function buildReportBlob(report: Report, opts?: BuildOptions): Promise<BuiltDocx> {
   const o = report.options;
   const reference = report.cover.style === "reference";
   const pageProps = { page: { size: { width: PAGE.width, height: PAGE.height }, margin: reference ? { ...MARGIN, left: 1800, right: 1800 } : MARGIN } };
   const sections: ISectionOptions[] = [];
   const dropped: DroppedImage[] = [];
+  const figNo = opts?.autoFigureCaptions ? figureNumbers(report) : null;
 
   if (coverHasOwnPage(report.cover)) {
     // 封面独立成页 → 两个 section，正文从第 1 页开始编号
@@ -523,7 +546,7 @@ export async function buildReportBlob(report: Report): Promise<BuiltDocx> {
     sections.push({
       properties: { ...pageProps, type: SectionType.NEXT_PAGE, page: { ...pageProps.page, pageNumbers: { start: 1 } } },
       footers: o.pageNumber ? { default: pageFooter() } : undefined,
-      children: contentChildren(report, dropped),
+      children: contentChildren(report, dropped, figNo),
     });
   } else {
     const plainKids: Array<Paragraph | Table> = [...plainCover(report)];
@@ -533,7 +556,7 @@ export async function buildReportBlob(report: Report): Promise<BuiltDocx> {
     sections.push({
       properties: pageProps,
       footers: o.pageNumber ? { default: pageFooter() } : undefined,
-      children: [...plainKids, ...contentChildren(report, dropped)],
+      children: [...plainKids, ...contentChildren(report, dropped, figNo)],
     });
   }
 

@@ -260,6 +260,26 @@ check(
   check("脏尺寸不是丢内容，不该报警告", r.warnings.length === 0, r.warnings.join("；"));
 }
 
+/* ---------- 自动图注：全文连续「图 N」、手写不覆盖、空块不占号、不勾=现状 ---------- */
+{
+  const cap = sample();
+  cap.sections[2].steps[0].blocks = [
+    { id: "c1", kind: "image", dataUrl: PNG_1x1, caption: "查询结果", align: "center", widthPct: 60, captionPos: "below", w: 400, h: 300 },
+    { id: "c2", kind: "image", dataUrl: "", caption: "", align: "center", widthPct: 0, captionPos: "below", w: 0, h: 0 },
+    { id: "c3", kind: "image", dataUrl: PNG_1x1, caption: "", align: "center", widthPct: 60, captionPos: "below", w: 400, h: 300 },
+  ];
+  const docOf = async (auto?: boolean) => {
+    const r = await buildReportBlob(cap, { autoFigureCaptions: auto });
+    const zip = await JSZip.loadAsync(Buffer.from(await r.blob.arrayBuffer()));
+    return zip.file("word/document.xml")!.async("string");
+  };
+  const off = await docOf(undefined);
+  check("不勾选时没图注的图依旧没有图注（现状不变）", !off.includes(">图 2<") && off.includes("查询结果"));
+  const on = await docOf(true);
+  check("勾选后第二张有图字节、没图注的补出「图 2」", on.includes(">图 2<"));
+  check("手写图注不被覆盖，空块不占号（不会出现孤立的图 1）", on.includes("查询结果") && !on.includes(">图 1<"));
+}
+
 /* ---------- 超宽截图：夹到版心后必须保持原比例（旧写法夹宽不夹高，会被横向压扁） ---------- */
 {
   const wide = sample();
