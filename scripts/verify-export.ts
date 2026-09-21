@@ -260,6 +260,25 @@ check(
   check("脏尺寸不是丢内容，不该报警告", r.warnings.length === 0, r.warnings.join("；"));
 }
 
+/* ---------- 超宽截图：夹到版心后必须保持原比例（旧写法夹宽不夹高，会被横向压扁） ---------- */
+{
+  const wide = sample();
+  wide.sections[2].steps[0].blocks = [
+    { id: "w1", kind: "image", dataUrl: PNG_1x1, caption: "", align: "center", widthPct: 0, captionPos: "below", w: 1920, h: 1080 },
+    { id: "w2", kind: "image", dataUrl: PNG_1x1, caption: "", align: "center", widthPct: 60, captionPos: "below", w: 1920, h: 1080 },
+    { id: "w3", kind: "image", dataUrl: PNG_1x1, caption: "", align: "center", widthPct: 0, captionPos: "below", w: 1080, h: 1920 },
+  ];
+  const r = await buildReportBlob(wide);
+  const zip = await JSZip.loadAsync(Buffer.from(await r.blob.arrayBuffer()));
+  const doc = await zip.file("word/document.xml")!.async("string");
+  const ext = [...doc.matchAll(/<wp:extent cx="(-?\d+)" cy="(-?\d+)"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  const near = ([cx, cy]: number[], ratio: number) => Math.abs(cy / cx - ratio) < 0.01;
+  check("1920×1080 原尺寸导出仍是 16:9", near(ext[0], 1080 / 1920), `cy/cx=${(ext[0][1] / ext[0][0]).toFixed(3)}`);
+  check("1920×1080 选 60% 宽也是 16:9", near(ext[1], 1080 / 1920), `cy/cx=${(ext[1][1] / ext[1][0]).toFixed(3)}`);
+  check("竖图 1080×1920 夹宽后按高瘦长比输出", near(ext[2], 1920 / 1080), `cy/cx=${(ext[2][1] / ext[2][0]).toFixed(3)}`);
+  check("超宽图确实被夹进版心", ext[0][0] / 9525 <= 651, `${(ext[0][0] / 9525).toFixed(0)}px`);
+}
+
 /* ---------- 输出 ---------- */
 await fs.writeFile(path.join(outDir, "plain.docx"), plain.buf);
 await fs.writeFile(path.join(outDir, "hero.docx"), hero.buf);

@@ -358,7 +358,10 @@ function imageBlockChildren(
   const naturalW = pos(block.w, Math.round(contentWidthPx * 0.8));
   const naturalH = pos(block.w > 0 ? block.h : 0, Math.round(naturalW * 0.62));
   const pct = pos(block.widthPct, 0);
-  const width = pos(pct > 0 ? (contentWidthPx * pct) / 100 : naturalW, naturalW);
+  // 宽先夹进版心，高从【夹过的宽】推 —— 反过来会让超宽截图按原高输出，在 Word 里被横向压扁
+  const wantW = pos(pct > 0 ? (contentWidthPx * pct) / 100 : naturalW, naturalW);
+  const finalW = Math.max(1, Math.min(Math.round(wantW), contentWidthPx));
+  const finalH = Math.max(1, Math.round((finalW * naturalH) / naturalW));
   const out: Paragraph[] = [
     new Paragraph({
       alignment: alignmentOf(block.align),
@@ -368,8 +371,8 @@ function imageBlockChildren(
         new ImageRun({
           ...img,
           transformation: {
-            width: Math.max(1, Math.min(Math.round(width), contentWidthPx)),
-            height: Math.max(1, Math.round((width * naturalH) / naturalW)),
+            width: finalW,
+            height: finalH,
           },
           altText: { name: block.caption || "报告插图", description: block.caption || "报告插图" },
         }),
