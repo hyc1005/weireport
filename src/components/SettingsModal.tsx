@@ -1,5 +1,6 @@
-import { DEFAULT_OPTIONS } from "../template";
-import { HEAD_GLYPHS, HEAD_GLYPH_LABEL } from "../headings";
+import { useState } from "react";
+import { DEFAULT_OPTIONS, clearAuthorPrefs } from "../template";
+import { HEAD_GLYPHS, HEAD_GLYPH_LABEL, sectionsWithContinuedSteps } from "../headings";
 import { sizeLabel, type HeadGlyph, type HeadRestart, type Report, type ReportOptions } from "../types";
 import { formatBytes } from "../capture";
 import type { BackupInfo, StorageUsage } from "../storage";
@@ -44,6 +45,8 @@ export function SettingsModal({
   onReset,
 }: Props) {
   const o = report.options;
+  const continued = sectionsWithContinuedSteps(report);
+  const [authorForgotten, setAuthorForgotten] = useState(false);
 
   return (
     <div className="modal-mask" onClick={onClose}>
@@ -114,6 +117,16 @@ export function SettingsModal({
               标题自己写了编号（如「1. 添加图层」）时系统编号让位给它，纸面上标「沿用原编号」，但该步仍占号。
               小节编号默认「无」，因为预设骨架的小节标题里已经手写了「一、二、三」。
             </p>
+            <p className="muted">
+              两种重计范围的区别：全文连续 = 三 1. 2. → 四 3.（步骤号跨小节接着数）；每小节重新 = 三 1. 2. → 四 1.（每个小节都从 1. 起）。
+            </p>
+            {o.stepRestart !== "section" && continued > 0 && (
+              <div className="btn-row">
+                <button className="btn btn-sm" onClick={() => onOptions({ stepRestart: "section" })}>
+                  按小节重排编号（{continued} 个小节的第一条不是 1.）
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="modal-group">
@@ -293,6 +306,16 @@ export function SettingsModal({
             <div className="btn-row danger-row">
               <button className="btn btn-sm" onClick={() => onOptions({ ...DEFAULT_OPTIONS })}>
                 恢复默认排版
+              </button>
+              <button
+                className="btn btn-sm"
+                title="只影响新建工程时自动填写，不会清掉已写进工程里的学号姓名"
+                onClick={() => {
+                  clearAuthorPrefs();
+                  setAuthorForgotten(true);
+                }}
+              >
+                {authorForgotten ? "已忘掉记住的学号姓名" : "忘掉记住的学号姓名"}
               </button>
               <button className="btn btn-sm danger" onClick={onReset}>
                 清空所有内容（保留小节结构）

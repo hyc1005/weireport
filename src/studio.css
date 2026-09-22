@@ -67,6 +67,17 @@ button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid
 .paper { flex-shrink: 0; border-radius: 1px; border: 1px solid #e0e4e6; box-shadow: 0 3px 8px #283b4510, 0 16px 40px #283b450a; }
 .paper-reference { padding: 96px 120px; }
 .paper-reference .paper-h2, .paper-reference .paper-h3 { color: #0f4761; }
+/* 纸面上的大标题就是输入框：平时与排版结果逐像素一致，点一下才出现虚线框 */
+.ip { border: 1px solid transparent; background: transparent; border-radius: 4px; cursor: text; }
+.ip:hover { border-color: var(--line-2); }
+.ip:focus, .ip:focus-visible { border-color: var(--accent); background: #fff; outline: none; }
+.ip-placeholder { color: #b3bfc7; }
+.ip-title { width: min(var(--ip-w, 8ch), 100%); }
+input.ip-title { box-sizing: border-box; margin: 0; padding: 0; border: 1px dashed var(--line-2); background: #fff; color: inherit; text-align: inherit; }
+.reference-title.ip { display: block; margin-left: auto; margin-right: auto; }
+.cv-center.ip-title, input.ip-title.cv-center { margin-left: auto; margin-right: auto; }
+.cv-plain > .ip-title { width: auto; line-height: 1.4; }
+.ip-nowrap { white-space: nowrap; }
 .paper-h3 input { font-size: inherit; }
 .paper-reference .block { padding-left: 0; }
 .paper-reference .block-side { left: -32px; }

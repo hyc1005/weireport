@@ -12,7 +12,7 @@ import { CoverPanel, CoverPreview } from "../src/components/CoverPanel";
 import { BlockCard, type BlockApi } from "../src/components/BlockCard";
 import { Outline } from "../src/components/Outline";
 import { WizardBar } from "../src/components/WizardBar";
-import { createReport } from "../src/template";
+import { clearAuthorPrefs, createReport, readAuthorPrefs, saveAuthorPrefs, withStoredAuthor } from "../src/template";
 import { afterBlock, insertBlock } from "../src/reportOps";
 import { textBlock as makeTextBlock } from "../src/types";
 import { deadlineChip, deadlineLabel, deadlineTone, flattenPages, planDeadline } from "../src/wizard";
@@ -184,6 +184,68 @@ check("封面·正式风：学号姓名分行", heroCv.includes("学号：100424
 
 const refCv = flat(<CoverPreview report={{ ...report, cover: { ...report.cover, style: "reference" } }} />);
 check("封面·课程报告：大字标题 + 学号姓名", refCv.includes("cv-reference") && refCv.includes("学号：1004245121"));
+
+/* ---------------- 大标题在纸面上就地改（不再靠旁边的输入框） ---------------- */
+const editCv = flat(
+  <CoverPreview
+    report={{ ...report, cover: { ...report.cover, style: "reference" } }}
+    onTitle={noop}
+  />,
+);
+check(
+  "大标题就地可编辑：纸面上带 data-inplace 标题元素（点一下就地变输入框，不另开文本框）",
+  editCv.includes('data-inplace="title"') && editCv.includes("点一下直接改"),
+);
+check(
+  "大标题就地可编辑：就地元素带 reference-title 排版类（点一下才变输入框，平时与排版一致）",
+  editCv.includes("reference-title"),
+);
+check(
+  "纯预览不给 onTitle 时不出现就地编辑元素（导出/打印走的路仍是纯文字）",
+  !refCv.includes('data-inplace="title"'),
+);
+
+/* ---------------- 学号姓名在本机记住 ---------------- */
+const store = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+  },
+});
+clearAuthorPrefs();
+check(
+  "记住学号姓名：写进去能读回来",
+  saveAuthorPrefs({ studentId: " 1004245121 ", name: " 黄玉琛 " }) &&
+    readAuthorPrefs()?.studentId === "1004245121" &&
+    readAuthorPrefs()?.name === "黄玉琛",
+);
+check(
+  "记住学号姓名：新建工程自动带上，不用再手填",
+  createReport().meta.studentId === "1004245121" && createReport().meta.name === "黄玉琛",
+);
+check(
+  "记住学号姓名：显式传入的值优先，不被本机记忆覆盖",
+  createReport({ studentId: "999", name_: "别的同学" }).meta.studentId === "999" &&
+    createReport({ studentId: "999", name_: "别的同学" }).meta.name === "别的同学",
+);
+const blankReport = createReport();
+blankReport.meta.studentId = "";
+blankReport.meta.name = "";
+check(
+  "记住学号姓名：老工程 / 导入件里空着的会补上",
+  withStoredAuthor(blankReport).meta.studentId === "1004245121" &&
+    withStoredAuthor(blankReport).meta.name === "黄玉琛",
+);
+const namedReport = createReport({ studentId: "111", name_: "已填过" });
+check("记住学号姓名：已经填过的绝不覆盖", withStoredAuthor(namedReport).meta.studentId === "111");
+clearAuthorPrefs();
+check(
+  "记住学号姓名：可以忘掉（忘掉后新建工程不再自动带）",
+  readAuthorPrefs() === null && createReport().meta.studentId === "",
+);
 
 const panel = flat(<CoverPanel report={report} onCover={noop} />);
 check(

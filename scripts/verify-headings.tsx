@@ -10,7 +10,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import JSZip from "jszip";
 import { buildReportBlob } from "../src/docx/build";
-import { computeHeadings, formatHead, startsWithManualNumber } from "../src/headings";
+import { computeHeadings, formatHead, sectionsWithContinuedSteps, startsWithManualNumber } from "../src/headings";
 import { createReport } from "../src/template";
 import { reportToMarkdown } from "../src/markdown";
 import { normalizeReport } from "../src/storage";
@@ -190,18 +190,38 @@ async function compareAll(name: string, report: Report) {
   );
 }
 
-/* ---------------- 1. 基线：默认阿拉伯数字 + 全文连续 ---------------- */
-const base = fixture(PLAIN);
+/* ---------------- 1. 基线：默认阿拉伯数字 + 默认「每小节重新」 ---------------- */
+const base = fixture(PLAIN); // 不覆盖任何选项：走的就是 createReport 的默认值
 check(
-  "空标题又没内容的占位步骤不占号，下一节接着数（编号序列既无空洞也无空位）",
-  same(expected(base).stepNos, ["1.", "2.", "3."]),
+  "默认每小节重新：第二节从 1. 重来（不会出现「四的第一条是 3.」）",
+  same(expected(base).stepNos, ["1.", "2.", "1."]),
   expected(base).stepNos.join(","),
 );
-check("被跳过的占位步骤也不会出现在导出里", expected(base).stepWholes.length === 3);
-await compareAll("默认设置", base);
+check(
+  "空标题又没内容的占位步骤不占号（编号序列既无空洞也无空位），且第一条恒为 1.",
+  expected(base).stepWholes.length === 3 && expected(base).stepNos[0] === "1.",
+  expected(base).stepWholes.join(" | "),
+);
+check("默认值就是每小节重新（不是全文连续）", base.options.stepRestart === "section", base.options.stepRestart);
+await compareAll("默认设置（每节重新）", base);
+
+/* ---------------- 1b. 显式选择「全文连续」：下一节接着数 ---------------- */
+const docMode = fixture(PLAIN, { stepRestart: "document" });
+check(
+  "全文连续（显式选择）：空占位不占号，下一节接着数到 3.",
+  same(expected(docMode).stepNos, ["1.", "2.", "3."]),
+  expected(docMode).stepNos.join(","),
+);
+await compareAll("全文连续（显式选择）", docMode);
+check(
+  "设置里的「按小节重排」只在真的出现「本节第一条不是 1.」时才提示",
+  sectionsWithContinuedSteps(docMode) === 1 && sectionsWithContinuedSteps(base) === 0,
+  `全文连续=${sectionsWithContinuedSteps(docMode)} 每节重新=${sectionsWithContinuedSteps(base)}`,
+);
 
 /* ---------------- 2. 沿用作者自带编号：抑制显示但仍占号 ---------------- */
 const manual = fixture(MANUAL);
+const manualDoc = fixture(MANUAL, { stepRestart: "document" }); // 手写编号最容易被重计范围影响，两种都看
 const b3 = computeHeadings(manual).step("sec-b:b3");
 check("标题自己写了编号 → 判定为手写", startsWithManualNumber("1. 我自己写了编号") && !startsWithManualNumber("添加图形图层"));
 check(
@@ -210,8 +230,13 @@ check(
   b3 ? `n=${b3.n} suppressed=${b3.suppressed} no="${b3.no}"` : "null",
 );
 check(
-  "抑制会让可见编号看起来跳号（导出结果与作者手写编号一致，这是取舍）",
-  same(expected(manual).stepNos, ["1.", "3."]),
+  "全文连续 + 手写编号：抑制会让可见编号看起来跳号（1. 3.，导出结果与作者手写编号一致，这是取舍）",
+  same(expected(manualDoc).stepNos, ["1.", "3."]),
+  expected(manualDoc).stepNos.join(","),
+);
+check(
+  "默认每节重新 + 手写编号：第二节的手写「1.」不再吞掉本节的 1. 号（可见 1. 1.，但两节都从 1. 起）",
+  same(expected(manual).stepNos, ["1.", "1."]),
   expected(manual).stepNos.join(","),
 );
 check(
@@ -220,6 +245,7 @@ check(
   expected(manual).stepWholes.join(" | "),
 );
 await compareAll("含手写编号", manual);
+await compareAll("含手写编号 + 全文连续", manualDoc);
 
 /* ---------------- 3. 字形与重计范围 ---------------- */
 const alphaDoc = fixture(PLAIN, { stepGlyph: "alpha", stepRestart: "document" });
@@ -249,9 +275,9 @@ await compareAll("完全不编号", fixture(PLAIN, { stepGlyph: "none" }));
 /* ---------------- 4. 小节编号 ---------------- */
 const secCn = fixture(PLAIN, { sectionGlyph: "chinese" });
 check(
-  "小节编号与步骤编号各算各的，打印预览按文档顺序是 一、二、1.2.三、3.",
+  "小节编号与步骤编号各算各的：小节 一、二、三，步骤每节从 1. 重来（1.2. 1.）",
   same(headsOf(renderToStaticMarkup(<PrintDocument report={secCn} />)).h2, ["一、", "二、", "三、"]) &&
-    same(headsOf(renderToStaticMarkup(<PrintDocument report={secCn} />)).h3, ["1.", "2.", "3."]),
+    same(headsOf(renderToStaticMarkup(<PrintDocument report={secCn} />)).h3, ["1.", "2.", "1."]),
   JSON.stringify(headsOf(renderToStaticMarkup(<PrintDocument report={secCn} />))),
 );
 await compareAll("小节也编号", secCn);
@@ -261,7 +287,7 @@ secDup.sections[0].title = "一、实验目的"; // 作者已经手写了小节�
 const dup = headsOf(renderToStaticMarkup(<PrintDocument report={secDup} />));
 check(
   "小节标题里已手写编号 → 不重复叠加（第一条只剩作者自己的），后续仍占号",
-  same(dup.h2, ["二、", "三、"]) && same(dup.h3, ["1.", "2.", "3."]),
+  same(dup.h2, ["二、", "三、"]) && same(dup.h3, ["1.", "2.", "1."]),
   JSON.stringify(dup),
 );
 check("叠加后不会出现「一、一、实验目的」这种双编号", !renderToStaticMarkup(<PrintDocument report={secDup} />).includes("一、一、"));
@@ -277,8 +303,19 @@ await compareAll("含空节", withEmpty);
 const legacyPlain = normalizeReport({ cover: { style: "plain" }, sections: [] });
 const legacyRef = normalizeReport({ cover: { style: "reference" }, sections: [] });
 check(
-  "老工程默认：简洁封面 → 1. 2. 3.，全文连续，小节不编号",
+  "新建工程默认：简洁封面 → 1. 2. 3.，每小节重新，小节不编号",
+  createReport().options.stepGlyph === "arabic" &&
+    createReport().options.stepRestart === "section" &&
+    createReport().options.sectionGlyph === "none",
+);
+check(
+  "老工程（缺失或非法值）补默认：简洁封面 → 1. 2. 3.，小节不编号",
   legacyPlain.options.stepGlyph === "arabic" && legacyPlain.options.stepRestart === "document" && legacyPlain.options.sectionGlyph === "none",
+);
+check(
+  "老工程里存过的重计范围原样保留（不偷改用户选择）",
+  normalizeReport({ options: { stepRestart: "section" }, sections: [] }).options.stepRestart === "section" &&
+    normalizeReport({ options: { stepRestart: "document" }, sections: [] }).options.stepRestart === "document",
 );
 check(
   "老工程默认：课程报告封面 → A. B. C.（封面三元只活在默认值这一处）",

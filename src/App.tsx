@@ -60,7 +60,7 @@ import {
   type ProjectSummary,
   type StorageUsage,
 } from "./storage";
-import { createReport, DEFAULT_OPTIONS, skeletonFrom } from "./template";
+import { createReport, DEFAULT_OPTIONS, saveAuthorPrefs, skeletonFrom, withStoredAuthor } from "./template";
 import { downloadJson, downloadMarkdown, downloadReport } from "./export";
 import { reportFileName } from "./markdown";
 import { imageBlock, textBlock, type Block, type BlockKind, type Report } from "./types";
@@ -289,6 +289,20 @@ export default function App() {
     };
   }, [report, flush]);
 
+  /**
+   * 学号 / 姓名跟着「这台机器」记住：每次改动写进 localStorage，
+   * 新建工程与打开老工程时再补回去（见 template.ts 的 readAuthorPrefs / withStoredAuthor）。
+   * 只在这两个字段真的变了的时候写，避免每次敲字都碰一次 localStorage。
+   */
+  const lastAuthorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!report) return;
+    const json = JSON.stringify({ studentId: report.meta.studentId, name: report.meta.name });
+    if (lastAuthorRef.current === json) return;
+    lastAuthorRef.current = json;
+    saveAuthorPrefs({ studentId: report.meta.studentId, name: report.meta.name });
+  }, [report]);
+
   // 切标签 / 最小化 / 关页面时强制落盘 + 未保存就拦一下
   useEffect(() => {
     const onVisibility = () => {
@@ -373,12 +387,14 @@ export default function App() {
 
   async function openProject(id: string) {
     try {
-      const loaded = await loadProject(id);
-      if (!loaded) {
+      const stored = await loadProject(id);
+      if (!stored) {
         setError("这个工程读不出来了（本地数据库里没有这条记录）");
         void refreshProjects();
         return;
       }
+      // 学号姓名为空的老工程 / 导入件：自动补上这台机器记下来的（填过的绝不覆盖）
+      const loaded = withStoredAuthor(stored);
       resetSaveState();
       clearHistory();
       skipSaveForRef.current = loaded;
@@ -392,7 +408,7 @@ export default function App() {
   }
 
   async function newProject() {
-    const fresh = createReport();
+    const fresh = withStoredAuthor(createReport());
     // 新建工程默认「课程报告」封面（独立大字封面）；Word 导入那边另用「简洁风」
     fresh.cover = { ...fresh.cover, style: "reference" };
     try {
@@ -426,9 +442,11 @@ export default function App() {
   async function newFromSkeleton(id: string) {
     const src = await loadProject(id);
     if (!src) return;
-    const fresh = createReport(
-      { order: src.meta.order, topic: src.meta.topic, studentId: src.meta.studentId, name_: src.meta.name },
-      skeletonFrom(src),
+    const fresh = withStoredAuthor(
+      createReport(
+        { order: src.meta.order, topic: src.meta.topic, studentId: src.meta.studentId, name_: src.meta.name },
+        skeletonFrom(src),
+      ),
     );
     try {
       await saveProject(fresh);
@@ -1041,7 +1059,10 @@ export default function App() {
 
           <div className={`paper${report.cover.style === "reference" ? " paper-reference" : ""}`} data-page={page.kind}>
             {page.kind === "cover" ? (
-              <CoverPreview report={report} />
+              <CoverPreview
+                report={report}
+                onTitle={(t) => setReport((r) => (r ? updateCover(r, { title: t }) : r), "cover:title")}
+              />
             ) : (
               <>
                 {page.section.mode === "plain" ? (

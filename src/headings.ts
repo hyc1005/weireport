@@ -123,7 +123,7 @@ function makeLabel(glyph: HeadGlyph, n: number, suppressed: boolean): HeadLabel 
 export function computeHeadings(report: Report): Headings {
   const { stepGlyph, stepRestart, sectionGlyph } = report.options;
   const glyph: HeadGlyph = stepGlyph ?? "arabic";
-  const restart: HeadRestart = stepRestart ?? "document";
+  const restart: HeadRestart = stepRestart ?? "section";
   const secGlyph: HeadGlyph = sectionGlyph ?? "none";
 
   const stepMap = new Map<string, HeadLabel>();
@@ -149,4 +149,23 @@ export function computeHeadings(report: Report): Headings {
     step: (key) => stepMap.get(key) ?? null,
     section: (id) => sectionMap.get(id) ?? null,
   };
+}
+
+/**
+ * 有没有哪个 steps 小节的「第一条占号步骤」不是 1.
+ * 出现这种情况只可能是编号跨小节连续了（比如「四、课堂任务」下面第一条显示成 3.），
+ * 拿来做设置里的「按小节重排」提示与一键修正入口。
+ */
+export function sectionsWithContinuedSteps(report: Report): number {
+  const headings = computeHeadings(report);
+  let hit = 0;
+  for (const section of report.sections) {
+    if (section.mode !== "steps") continue;
+    for (const step of section.steps) {
+      if (!countForNumbering(section, step)) continue;
+      if ((headings.step(`${section.id}:${step.id}`)?.n ?? 1) > 1) hit += 1;
+      break;
+    }
+  }
+  return hit;
 }
