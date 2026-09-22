@@ -46,7 +46,7 @@ export interface Section {
 }
 
 export interface Meta {
-  /** 实验序号，例如「十一」 */
+  /** 实验序号，例如「01」 */
   order: string;
   /** 实验主题 */
   topic: string;
@@ -109,7 +109,7 @@ export interface ReportOptions {
 
 export interface Report {
   id: string;
-  /** 工程名，例如「实验十一 属性查询」 */
+  /** 工程名，例如「实验01 属性查询」 */
   name: string;
   createdAt: number;
   updatedAt: number;

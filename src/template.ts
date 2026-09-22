@@ -97,7 +97,7 @@ export interface CreateReportInput {
 /** 新建一个工程；想复用旧骨架时把 sections 传进来即可 */
 export function createReport(input: CreateReportInput = {}, sections?: Section[]): Report {
   const now = Date.now();
-  const order = input.order ?? "十一";
+  const order = input.order ?? "01";
   const topic = input.topic ?? "";
   return {
     id: uid("proj"),
@@ -142,16 +142,3 @@ export const PRESET_SECTIONS = [
   "六、遇到的问题",
   "七、参考资料",
 ];
-
-export function createReferenceReport(): Report {
-  const report = createReport({ order: "02" });
-  report.cover = { ...report.cover, style: "reference", subtitle: "网络地理信息系统" };
-  report.options = { ...report.options, subHeadSize: 40, stepHeadSize: 32, firstLineIndent: false, stepGlyph: defaultStepGlyph("reference") };
-  report.sections = [
-    { id: uid("sec"), title: "实验目的", mode: "plain", required: true, steps: [withBlocks(newStep())] },
-    { id: uid("sec"), title: "实验步骤", mode: "steps", required: true,
-      steps: [newStep("发布 WMS 服务"), newStep("高级符号与图层组"), newStep("GeoWebCache 创建切片"), newStep("TileMill 创建切片")] },
-    { id: uid("sec"), title: "实验总结", mode: "plain", required: false, steps: [withBlocks(newStep())] },
-  ];
-  return report;
-}

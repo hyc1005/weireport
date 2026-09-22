@@ -60,7 +60,7 @@ import {
   type ProjectSummary,
   type StorageUsage,
 } from "./storage";
-import { createReport, createReferenceReport, DEFAULT_OPTIONS, skeletonFrom } from "./template";
+import { createReport, DEFAULT_OPTIONS, skeletonFrom } from "./template";
 import { downloadJson, downloadMarkdown, downloadReport } from "./export";
 import { reportFileName } from "./markdown";
 import { imageBlock, textBlock, type Block, type BlockKind, type Report } from "./types";
@@ -392,7 +392,9 @@ export default function App() {
   }
 
   async function newProject() {
-    const fresh = createReferenceReport();
+    const fresh = createReport();
+    // 新建工程默认「课程报告」封面（独立大字封面）；Word 导入那边另用「简洁风」
+    fresh.cover = { ...fresh.cover, style: "reference" };
     try {
       await saveProject(fresh);
     } catch (e) {
@@ -1096,7 +1098,7 @@ export default function App() {
                   实验序号
                   <input
                     value={report.meta.order}
-                    placeholder="十一"
+                    placeholder="01"
                     onChange={(e) => setReport((r) => (r ? updateMeta(r, { order: e.target.value }) : r), "meta:order")}
                   />
                 </label>
@@ -1104,7 +1106,7 @@ export default function App() {
                   实验主题
                   <input
                     value={report.meta.topic}
-                    placeholder="属性查询与空间查询"
+                    placeholder="如 地图渲染"
                     onChange={(e) => setReport((r) => (r ? updateMeta(r, { topic: e.target.value }) : r), "meta:topic")}
                   />
                 </label>
